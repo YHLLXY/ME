@@ -1,9 +1,17 @@
-const CACHE = 'self-portrait-v1';
+const CACHE = 'self-portrait-v2';
+const SCOPE = self.location.pathname.replace(/\/[^/]*$/, '');
 const ASSETS = [
-  '/', '/index.html', '/css/style.css',
-  '/js/app.js', '/js/store.js', '/js/questions.js',
-  '/js/render.js', '/js/scoring.js', '/js/report.js', '/js/ui.js',
-  '/js/lib/anime.umd.min.js'
+  SCOPE + '/',
+  SCOPE + '/index.html',
+  SCOPE + '/css/style.css',
+  SCOPE + '/js/app.js',
+  SCOPE + '/js/store.js',
+  SCOPE + '/js/questions.js',
+  SCOPE + '/js/render.js',
+  SCOPE + '/js/scoring.js',
+  SCOPE + '/js/report.js',
+  SCOPE + '/js/ui.js',
+  SCOPE + '/js/lib/anime.umd.min.js'
 ];
 
 self.addEventListener('install', e => {
