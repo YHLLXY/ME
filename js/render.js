@@ -91,12 +91,42 @@ function renderVisible() {
   }
 }
 
+/* ===== 渲染领域分段标题 ===== */
+function renderDomainHeader(domain, startIndex, endIndex) {
+  const domainInfo = DOMAINS.find(d => d.id === domain);
+  if (!domainInfo) return '';
+
+  const answeredInDomain = Object.keys(answers).filter(k => {
+    const q = questions.find(qq => qq.id === k);
+    return q && q.domain === domain && answers[k] !== '__SKIPPED__';
+  }).length;
+  const totalInDomain = endIndex - startIndex + 1;
+
+  return `<div class="domain-header" id="domain-${domain}">
+    <div class="domain-header-title">${domainInfo.emoji} ${domainInfo.name}</div>
+    <div class="domain-header-meta">
+      第 ${startIndex+1}-${endIndex+1} 题 · 共 ${totalInDomain} 题
+      <span class="domain-header-progress">已答 ${answeredInDomain}</span>
+    </div>
+  </div>`;
+}
+
 /* ===== 渲染单个题目 ===== */
 function renderQuestion(container, q, index) {
   const val = answers[q.id] ?? null;
   const isSkipped = val === '__SKIPPED__';
 
   container.innerHTML = '';
+
+  // 检查领域边界，插入分段标题
+  if (index === 0 || questions[index-1].domain !== q.domain) {
+    let endIndex = index;
+    while (endIndex < questions.length - 1 && questions[endIndex + 1].domain === q.domain) {
+      endIndex++;
+    }
+    container.innerHTML = renderDomainHeader(q.domain, index, endIndex);
+  }
+
   const card = document.createElement('div');
   card.className = `q-card${isSkipped ? ' skipped' : ''}`;
   card.dataset.qid = q.id;

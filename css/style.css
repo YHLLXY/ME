@@ -339,6 +339,16 @@ body {
 }
 .report-content { max-width: 680px; margin: 0 auto; padding: var(--space-lg) var(--space-md); }
 
+/* 底部安全区 */
+.r-action-bar { padding-bottom: calc(12px + var(--safe-bottom)); }
+.btn-back-top { bottom: calc(80px + var(--safe-bottom)); }
+
+/* 淡入上浮动画 */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 /* 响应式 */
 @media (max-width: 640px) {
   .waterfall { padding: 0 var(--space-md) 80px; }

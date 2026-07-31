@@ -37,6 +37,26 @@ async function init() {
   setupBackTop();
   setupTheme();
 
+  // 报告按钮
+  const btnReport = document.getElementById('btnReport');
+  btnReport.addEventListener('click', async () => {
+    await generateReport();
+    document.querySelector('.waterfall').style.display = 'none';
+    document.getElementById('reportPage').hidden = false;
+  });
+
+  // 领域导航链接滚动
+  document.querySelectorAll('.domain-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const domainId = link.getAttribute('href').replace('#', '');
+      const header = document.getElementById(domainId);
+      if (header) {
+        header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
   // 开始按钮
   document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('introSection').style.display = 'none';
@@ -101,6 +121,32 @@ async function handleAnswer(qid, value) {
     QUESTIONS.length
   );
   renderVisible(); // 刷新视口内题目状态
+  checkReportReady();
+
+  // 检查是否全部完成
+  const totalAnswered = Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length;
+  if (totalAnswered >= QUESTIONS.length) {
+    setTimeout(() => {
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--accent);color:var(--bg-base);padding:12px 24px;border-radius:24px;font-size:14px;font-weight:600;z-index:500;animation:fadeInUp 300ms ease-out;';
+      toast.textContent = '🎉 全部完成！点击右上角查看报告';
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 300ms'; setTimeout(() => toast.remove(), 300); }, 4000);
+    }, 500);
+  }
+}
+
+function checkReportReady() {
+  const btnReport = document.getElementById('btnReport');
+  const answered = Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length;
+  btnReport.hidden = answered < 20;
+  // 更新领域导航完成状态
+  const completedDomains = DOMAINS.filter(d => {
+    const domainQuestions = QUESTIONS.filter(q => q.domain === d.id);
+    const answered = domainQuestions.filter(q => currentAnswers[q.id] && currentAnswers[q.id] !== '__SKIPPED__').length;
+    return answered >= domainQuestions.length * 0.8;
+  }).map(d => d.id);
+  updateDomainNav(completedDomains);
 }
 
 async function handleCheckbox(qid, value) {

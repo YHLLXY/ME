@@ -692,15 +692,9 @@ function bindActionButtons(report) {
   var btnBack = document.getElementById('btnBackToQuestions');
   if (btnBack) {
     btnBack.addEventListener('click', function () {
-      var reportPage = document.getElementById('reportPage');
-      if (reportPage) {
-        reportPage.setAttribute('hidden', '');
-      }
-      var waterfall = document.getElementById('waterfall');
-      if (waterfall) {
-        waterfall.style.display = '';
-      }
-      window.scrollTo(0, 0);
+      document.getElementById('reportPage').hidden = true;
+      document.querySelector('.waterfall').style.display = '';
+      renderVisible();
     });
   }
 }
