@@ -1,0 +1,136 @@
+/* === js/app.js === */
+
+let currentAnswers = {};
+let currentSkipped = new Set();
+
+/* ===== 初始化 ===== */
+async function init() {
+  // 初始化 IndexedDB
+  await openDB();
+
+  // 恢复草稿
+  const draft = await restoreDraft();
+  currentAnswers = draft.answers || {};
+  if (draft.startedAt) {
+    document.getElementById('introSection').style.display = 'none';
+  }
+
+  // 初始化渲染
+  const viewportParent = document.querySelector('.waterfall');
+  // 将滚动从 body 移到 waterfall
+  viewportParent.style.overflowY = 'auto';
+  viewportParent.style.height = '100vh';
+  viewportParent.style.height = '100dvh';
+
+  initRender(QUESTIONS, currentAnswers);
+
+  // 初始化进度
+  updateProgress(Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length, QUESTIONS.length);
+
+  // 事件代理
+  setupEventDelegation();
+
+  // 保存监听
+  subscribe('saved', () => showSaved());
+
+  // UI 组件
+  setupBackTop();
+  setupTheme();
+
+  // 开始按钮
+  document.getElementById('btnStart').addEventListener('click', async () => {
+    document.getElementById('introSection').style.display = 'none';
+    await setMeta('startedAt', Date.now());
+    renderVisible();
+  });
+
+  // 页面隐藏时立即保存
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushPendingSaves();
+  });
+}
+
+/* ===== 全局事件代理 ===== */
+function setupEventDelegation() {
+  const viewport = document.getElementById('viewport');
+
+  viewport.addEventListener('click', async (e) => {
+    const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
+    if (!action) return;
+
+    const el = e.target.dataset.action ? e.target : e.target.closest('[data-action]');
+    const qid = el.dataset.qid;
+    const value = el.dataset.value;
+
+    switch (action) {
+      case 'likert':
+        await handleAnswer(qid, parseInt(value));
+        break;
+      case 'radio':
+        await handleAnswer(qid, value);
+        break;
+      case 'checkbox':
+        await handleCheckbox(qid, value);
+        break;
+      case 'skip':
+        await handleSkip(qid);
+        break;
+    }
+  });
+
+  viewport.addEventListener('input', debounce(async (e) => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+    const qid = e.target.dataset.qid;
+
+    switch (action) {
+      case 'shorttext': await handleAnswer(qid, e.target.value); break;
+      case 'longtext': await handleAnswer(qid, e.target.value); break;
+      case 'slider': await handleAnswer(qid, parseInt(e.target.value)); break;
+    }
+  }, 500));
+}
+
+/* ===== 答案处理 ===== */
+async function handleAnswer(qid, value) {
+  currentAnswers[qid] = value;
+  currentSkipped.delete(qid);
+  scheduleSave(qid, value);
+  updateProgress(
+    Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length,
+    QUESTIONS.length
+  );
+  renderVisible(); // 刷新视口内题目状态
+}
+
+async function handleCheckbox(qid, value) {
+  let arr = Array.isArray(currentAnswers[qid]) ? [...currentAnswers[qid]] : [];
+  if (arr.includes(value)) arr = arr.filter(v => v !== value);
+  else arr.push(value);
+  await handleAnswer(qid, arr);
+}
+
+async function handleSkip(qid) {
+  if (currentSkipped.has(qid)) {
+    currentSkipped.delete(qid);
+    delete currentAnswers[qid];
+  } else {
+    currentSkipped.add(qid);
+    currentAnswers[qid] = '__SKIPPED__';
+  }
+  scheduleSave(qid, currentAnswers[qid]);
+  renderVisible();
+}
+
+/* ===== 工具 ===== */
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+}
+
+/* ===== 启动 ===== */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
