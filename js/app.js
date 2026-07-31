@@ -120,7 +120,7 @@ async function handleAnswer(qid, value) {
     Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length,
     QUESTIONS.length
   );
-  renderVisible(); // 刷新视口内题目状态
+  renderVisible(true); // 强制刷新 — 答题后需要更新选中态
   checkReportReady();
 
   // 检查是否全部完成

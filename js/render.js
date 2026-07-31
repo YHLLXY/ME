@@ -5,15 +5,42 @@ let questions = [];
 let answers = {};
 let nodePool = [];
 const POOL_SIZE = 35;
+const DOMAIN_HEADER_HEIGHT = 90;
+
+/* 估算高度 — 基于实际 UI 测量（卡片头 ~55px + 输入区 + 跳过按钮 ~30px + padding） */
 const ESTIMATED_HEIGHTS = {
-  likert5: 110, likert7: 110, radio: 180, checkbox: 200,
-  ranking: 160, slider: 120, shorttext: 100, longtext: 160
+  likert5: 160, likert7: 160, radio: 260, checkbox: 300,
+  ranking: 240, slider: 160, shorttext: 140, longtext: 220
 };
-let questionPositions = []; // 每道题的累计 Y 偏移
+let questionPositions = [];
 let lastRenderRange = { from: -1, to: -1 };
 let viewportEl = null;
 let spacerEl = null;
 let ticking = false;
+
+/* ===== 动画 CSS 注入 ===== */
+let _animCSSInjected = false;
+function _injectAnimCSS() {
+  if (_animCSSInjected) return;
+  _animCSSInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `
+    .question-slot {
+      transition: opacity 250ms ease-out, transform 200ms ease-out;
+      overflow: hidden;
+    }
+    /* 节点正在"入场"——先从透明+微下移开始，下一帧过渡到正常 */
+    .question-slot.entering {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .question-slot { transition: none; }
+      .question-slot.entering { opacity: 1; transform: none; }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 /* ===== 初始化渲染 ===== */
 function initRender(_questions, _answers) {
@@ -22,71 +49,115 @@ function initRender(_questions, _answers) {
   viewportEl = document.getElementById('viewport');
   spacerEl = document.getElementById('spacer');
 
-  // 计算每题位置（动态高度）
+  _injectAnimCSS();
+
+  /* 滚动容器启用 GPU 合成 */
+  if (viewportEl.parentElement) {
+    viewportEl.parentElement.style.willChange = 'scroll-position';
+  }
+
+  /* 计算每题位置（估算高度 + 领域标题补偿） */
   questionPositions = [];
   let offset = 0;
-  for (const q of questions) {
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    /* 领域第一题多留标题空间 */
+    if (i === 0 || questions[i - 1].domain !== q.domain) {
+      offset += DOMAIN_HEADER_HEIGHT;
+    }
     questionPositions.push(offset);
-    offset += ESTIMATED_HEIGHTS[q.type] || 120;
+    offset += ESTIMATED_HEIGHTS[q.type] || 140;
   }
-  spacerEl.style.height = `${offset}px`;
+  spacerEl.style.height = offset + 'px';
   spacerEl.style.position = 'relative';
 
-  // 预创建节点池
+  /* 预创建节点池 */
   for (let i = 0; i < POOL_SIZE; i++) {
     const div = document.createElement('div');
     div.className = 'question-slot';
     div.style.cssText = 'position:absolute;left:0;right:0;';
+    div.setAttribute('aria-hidden', 'true');
     spacerEl.appendChild(div);
-    nodePool.push(div);
+    nodePool.push({ el: div, qi: -1 });
   }
 
-  // 滚动监听（RAF 节流）
+  /* 滚动监听（RAF 节流） */
   viewportEl.parentElement.addEventListener('scroll', () => {
     if (!ticking) {
       requestAnimationFrame(() => { renderVisible(); ticking = false; });
       ticking = true;
     }
-  });
+  }, { passive: true });
 
   renderVisible();
 }
 
 /* ===== 虚拟滚动核心 ===== */
 function renderVisible() {
-  const scrollTop = viewportEl.parentElement.scrollTop;
-  const viewH = viewportEl.parentElement.clientHeight;
-  const buffer = viewH; // 上下各一屏缓冲
+  if (!viewportEl || !spacerEl) return;
+
+  const scrollParent = viewportEl.parentElement;
+  const scrollTop = scrollParent.scrollTop;
+  const viewH = scrollParent.clientHeight;
+  const buffer = viewH * 3; /* 上下各 3 屏缓冲 — 行业推荐值 */
 
   const renderStart = Math.max(0, scrollTop - buffer);
   const renderEnd = Math.min(scrollTop + viewH + buffer, spacerEl.offsetHeight);
 
-  // 二分查找起始题号
+  /* 二分查找起始题号 */
   let from = 0, to = questions.length - 1;
   while (from < to) {
     const mid = Math.floor((from + to) / 2);
     if (questionPositions[mid] < renderStart) from = mid + 1;
     else to = mid;
   }
-  from = Math.max(0, from - 3);
+  from = Math.max(0, from - 5);
 
   while (to > from && questionPositions[to] > renderEnd) to--;
-  to = Math.min(questions.length - 1, to + 3);
+  to = Math.min(questions.length - 1, to + 5);
 
-  if (from === lastRenderRange.from && to === lastRenderRange.to) return;
+  /* 范围没变 → 跳过（除非强制刷新，如答完题需要更新选中态） */
+  if (!arguments[0] && from === lastRenderRange.from && to === lastRenderRange.to) return;
   lastRenderRange = { from, to };
 
   const count = to - from + 1;
+
   for (let i = 0; i < POOL_SIZE; i++) {
-    const node = nodePool[i];
+    const slot = nodePool[i];
+    const el = slot.el;
+
     if (i < count) {
       const qi = from + i;
       const q = questions[qi];
-      node.style.top = `${questionPositions[qi]}px`;
-      node.style.display = '';
-      renderQuestion(node, q, qi);
+
+      /* GPU 合成层定位 — 避免 reflow */
+      el.style.transform = `translateY(${questionPositions[qi]}px)`;
+      el.style.display = '';
+      el.removeAttribute('aria-hidden');
+
+      /* 如果节点是复用的（换了题目）→ 入场动画 */
+      if (slot.qi !== qi) {
+        slot.qi = qi;
+        el.classList.add('entering');
+        renderQuestion(el, q, qi);
+        /* 下一帧移除 entering → CSS 过渡自动执行 */
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            el.classList.remove('entering');
+          });
+        });
+      }
     } else {
-      node.style.display = 'none';
+      /* 池中多余节点 — 静默隐藏 */
+      if (slot.qi !== -1) {
+        slot.qi = -1;
+        el.classList.add('entering');
+        el.setAttribute('aria-hidden', 'true');
+        requestAnimationFrame(() => {
+          el.style.display = 'none';
+          el.classList.remove('entering');
+        });
+      }
     }
   }
 }
@@ -105,7 +176,7 @@ function renderDomainHeader(domain, startIndex, endIndex) {
   return `<div class="domain-header" id="domain-${domain}">
     <div class="domain-header-title">${domainInfo.emoji} ${domainInfo.name}</div>
     <div class="domain-header-meta">
-      第 ${startIndex+1}-${endIndex+1} 题 · 共 ${totalInDomain} 题
+      第 ${startIndex + 1}-${endIndex + 1} 题 · 共 ${totalInDomain} 题
       <span class="domain-header-progress">已答 ${answeredInDomain}</span>
     </div>
   </div>`;
@@ -118,8 +189,8 @@ function renderQuestion(container, q, index) {
 
   container.innerHTML = '';
 
-  // 检查领域边界，插入分段标题
-  if (index === 0 || questions[index-1].domain !== q.domain) {
+  /* 检查领域边界，插入分段标题 */
+  if (index === 0 || questions[index - 1].domain !== q.domain) {
     let endIndex = index;
     while (endIndex < questions.length - 1 && questions[endIndex + 1].domain === q.domain) {
       endIndex++;
@@ -131,7 +202,7 @@ function renderQuestion(container, q, index) {
   card.className = `q-card${isSkipped ? ' skipped' : ''}`;
   card.dataset.qid = q.id;
 
-  // 题号 + meta
+  /* 题号 + meta */
   const header = `<div class="q-header">
     <span class="q-number">Q${index + 1}</span>
     <div>
@@ -140,7 +211,7 @@ function renderQuestion(container, q, index) {
     </div>
   </div>`;
 
-  // 根据类型渲染输入区
+  /* 根据类型渲染输入区 */
   let inputHTML = '';
   switch (q.type) {
     case 'likert5': inputHTML = renderLikert(q, val, 5); break;
@@ -165,7 +236,7 @@ function renderQuestion(container, q, index) {
 
 /* ===== 题型渲染函数 ===== */
 function renderLikert(q, val, levels) {
-  const dots = Array.from({length: levels}, (_, i) => {
+  const dots = Array.from({ length: levels }, (_, i) => {
     const v = i + 1;
     const sel = val === v ? ' selected' : '';
     return `<button class="likert-dot${sel}" data-action="likert" data-qid="${q.id}" data-value="${v}" aria-label="${v}"></button>`;
@@ -173,7 +244,7 @@ function renderLikert(q, val, levels) {
   return `<div class="likert-row">
     <span class="likert-label">${q.options[0]?.label || '低'}</span>
     <div class="likert-dots">${dots}</div>
-    <span class="likert-label">${q.options[q.options.length-1]?.label || '高'}</span>
+    <span class="likert-label">${q.options[q.options.length - 1]?.label || '高'}</span>
   </div>`;
 }
 
@@ -231,13 +302,13 @@ function renderLongText(q, val) {
 /* ===== 辅助函数 ===== */
 function escapeHTML(str) {
   if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function getLayerLabel(layer) {
-  const map = { factual:'事实层', perceptual:'感知层', narrative:'叙事层' };
+  const map = { factual: '事实层', perceptual: '感知层', narrative: '叙事层' };
   return map[layer] || layer;
 }
 function getTypeLabel(type) {
-  const map = { likert5:'量表', likert7:'量表', radio:'单选', checkbox:'多选', ranking:'排序', slider:'滑杆', shorttext:'简答', longtext:'长答' };
+  const map = { likert5: '量表', likert7: '量表', radio: '单选', checkbox: '多选', ranking: '排序', slider: '滑杆', shorttext: '简答', longtext: '长答' };
   return map[type] || type;
 }
