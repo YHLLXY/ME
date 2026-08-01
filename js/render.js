@@ -5,12 +5,12 @@ let questions = [];
 let answers = {};
 let nodePool = [];
 const POOL_SIZE = 35;
-const DOMAIN_HEADER_HEIGHT = 90;
+const DOMAIN_HEADER_HEIGHT = 100;
 
-/* 估算高度 — 基于实际 UI 测量（卡片头 ~55px + 输入区 + 跳过按钮 ~30px + padding） */
+/* 估算高度 — 基于实际 UI 测量（卡片头 ~55px + 输入区 + 跳过按钮 ~30px + padding ~32px） */
 const ESTIMATED_HEIGHTS = {
-  likert5: 160, likert7: 160, radio: 260, checkbox: 300,
-  ranking: 240, slider: 160, shorttext: 140, longtext: 220
+  likert5: 180, likert7: 180, radio: 340, checkbox: 420,
+  ranking: 360, slider: 190, shorttext: 180, longtext: 260
 };
 let questionPositions = [];
 let lastRenderRange = { from: -1, to: -1 };
@@ -104,17 +104,23 @@ function renderVisible() {
   const renderStart = Math.max(0, scrollTop - buffer);
   const renderEnd = Math.min(scrollTop + viewH + buffer, spacerEl.offsetHeight);
 
-  /* 二分查找起始题号 */
-  let from = 0, to = questions.length - 1;
-  while (from < to) {
-    const mid = Math.floor((from + to) / 2);
-    if (questionPositions[mid] < renderStart) from = mid + 1;
-    else to = mid;
+  /* 二分查找下界（第一个进入渲染区的题目） */
+  let lo = 0, hi = questions.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (questionPositions[mid] < renderStart) lo = mid + 1;
+    else hi = mid;
   }
-  from = Math.max(0, from - 5);
+  let from = Math.max(0, lo - 5);
 
-  while (to > from && questionPositions[to] > renderEnd) to--;
-  to = Math.min(questions.length - 1, to + 5);
+  /* 二分查找上界（最后一个进入渲染区的题目） */
+  lo = from; hi = questions.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (questionPositions[mid] > renderEnd) hi = mid - 1;
+    else lo = mid;
+  }
+  let to = Math.min(questions.length - 1, hi + 5);
 
   /* 范围没变 → 跳过（除非强制刷新，如答完题需要更新选中态） */
   if (!arguments[0] && from === lastRenderRange.from && to === lastRenderRange.to) return;
