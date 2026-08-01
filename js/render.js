@@ -152,6 +152,9 @@ function renderVisible() {
             el.classList.remove('entering');
           });
         });
+      } else if (arguments[0]) {
+        /* 同题目但强制刷新（答题后更新选中态）→ 无动画直接重新渲染 */
+        renderQuestion(el, q, qi);
       }
     } else {
       /* 池中多余节点 — 静默隐藏 */

@@ -165,7 +165,7 @@ async function handleSkip(qid) {
     currentAnswers[qid] = '__SKIPPED__';
   }
   scheduleSave(qid, currentAnswers[qid]);
-  renderVisible();
+  renderVisible(true);
 }
 
 /* ===== 工具 ===== */
