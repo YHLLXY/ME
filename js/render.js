@@ -18,6 +18,11 @@ let viewportEl = null;
 let spacerEl = null;
 let ticking = false;
 
+/* ResizeObserver 动态高度校准 */
+let measuredHeights = {};       // qi → 真实测量高度（含领域标题）
+let resizeObserver = null;
+let pendingRecalc = false;
+
 /* ===== 动画 CSS 注入 ===== */
 let _animCSSInjected = false;
 function _injectAnimCSS() {
@@ -56,29 +61,22 @@ function initRender(_questions, _answers) {
     viewportEl.parentElement.style.willChange = 'scroll-position';
   }
 
-  /* 计算每题位置（估算高度 + 领域标题补偿） */
-  questionPositions = [];
-  let offset = 0;
-  for (let i = 0; i < questions.length; i++) {
-    const q = questions[i];
-    /* 领域第一题多留标题空间 */
-    if (i === 0 || questions[i - 1].domain !== q.domain) {
-      offset += DOMAIN_HEADER_HEIGHT;
-    }
-    questionPositions.push(offset);
-    offset += ESTIMATED_HEIGHTS[q.type] || 140;
-  }
-  spacerEl.style.height = offset + 'px';
-  spacerEl.style.position = 'relative';
+  /* 构建初始位置表（估算） */
+  rebuildPositions();
 
-  /* 预创建节点池 */
+  /* 创建 ResizeObserver — 渲染后自动测量真实高度 */
+  resizeObserver = new ResizeObserver(onNodeResize);
+
+  /* 预创建节点池，全部纳入 ResizeObserver 监听 */
   for (let i = 0; i < POOL_SIZE; i++) {
     const div = document.createElement('div');
     div.className = 'question-slot';
     div.style.cssText = 'position:absolute;left:0;right:0;';
     div.setAttribute('aria-hidden', 'true');
+    div.dataset.qi = '-1';
     spacerEl.appendChild(div);
     nodePool.push({ el: div, qi: -1 });
+    resizeObserver.observe(div);
   }
 
   /* 滚动监听（RAF 节流） */
@@ -144,6 +142,7 @@ function renderVisible() {
       /* 如果节点是复用的（换了题目）→ 入场动画 */
       if (slot.qi !== qi) {
         slot.qi = qi;
+        el.dataset.qi = qi;
         el.classList.add('entering');
         renderQuestion(el, q, qi);
         /* 下一帧移除 entering → CSS 过渡自动执行 */
@@ -160,6 +159,7 @@ function renderVisible() {
       /* 池中多余节点 — 静默隐藏 */
       if (slot.qi !== -1) {
         slot.qi = -1;
+        el.dataset.qi = '-1';
         el.classList.add('entering');
         el.setAttribute('aria-hidden', 'true');
         requestAnimationFrame(() => {
@@ -168,6 +168,65 @@ function renderVisible() {
         });
       }
     }
+  }
+}
+
+/* ===== ResizeObserver 回调 ===== */
+function onNodeResize(entries) {
+  let needsRecalc = false;
+  for (const entry of entries) {
+    const qi = parseInt(entry.target.dataset.qi);
+    if (isNaN(qi) || qi < 0) continue;
+    const newH = entry.target.offsetHeight; /* 使用 offsetHeight 获取完整盒模型高度 */
+    if (newH > 0 && measuredHeights[qi] !== newH) {
+      measuredHeights[qi] = newH;
+      needsRecalc = true;
+    }
+  }
+  if (needsRecalc && !pendingRecalc) {
+    pendingRecalc = true;
+    requestAnimationFrame(() => {
+      rebuildPositions();
+      renderVisible(true);
+      pendingRecalc = false;
+    });
+  }
+}
+
+/* ===== 重建位置表（实测高度优先，估算兜底） ===== */
+function rebuildPositions() {
+  /* 锚点：记录当前视口顶部的题目，防止校准后页面跳动 */
+  let anchorQi = 0;
+  if (viewportEl && viewportEl.parentElement && questionPositions.length > 0) {
+    const st = viewportEl.parentElement.scrollTop;
+    for (let i = questions.length - 1; i >= 0; i--) {
+      if (questionPositions[i] <= st) { anchorQi = i; break; }
+    }
+  }
+
+  let offset = 0;
+  questionPositions = [];
+  for (let i = 0; i < questions.length; i++) {
+    questionPositions.push(offset);
+    if (measuredHeights[i]) {
+      /* 实测高度已包含领域标题，直接用 */
+      offset += measuredHeights[i];
+    } else {
+      /* 估算：领域第一题加标题空间 */
+      if (i === 0 || questions[i - 1].domain !== questions[i].domain) {
+        offset += DOMAIN_HEADER_HEIGHT;
+      }
+      offset += ESTIMATED_HEIGHTS[questions[i].type] || 140;
+    }
+  }
+  if (spacerEl) {
+    spacerEl.style.height = offset + 'px';
+    spacerEl.style.position = 'relative';
+  }
+
+  /* 恢复锚点 — 校准前后视口顶部题目不变 */
+  if (viewportEl && viewportEl.parentElement) {
+    viewportEl.parentElement.scrollTop = questionPositions[anchorQi];
   }
 }
 
