@@ -22,6 +22,7 @@ let ticking = false;
 let measuredHeights = {};       // qi → 真实测量高度（含领域标题）
 let resizeObserver = null;
 let pendingRecalc = false;
+let _suppressScroll = false;    // rebuildPositions 内部设 scrollTop 时抑制 scroll 事件
 
 /* ===== 动画 CSS 注入 ===== */
 let _animCSSInjected = false;
@@ -79,8 +80,9 @@ function initRender(_questions, _answers) {
     resizeObserver.observe(div);
   }
 
-  /* 滚动监听（RAF 节流） */
+  /* 滚动监听（RAF 节流，抑制内部 scrollTop 调整触发的伪事件） */
   viewportEl.parentElement.addEventListener('scroll', () => {
+    if (_suppressScroll) return;
     if (!ticking) {
       requestAnimationFrame(() => { renderVisible(); ticking = false; });
       ticking = true;
@@ -95,7 +97,9 @@ function renderVisible() {
   if (!viewportEl || !spacerEl) return;
 
   const scrollParent = viewportEl.parentElement;
-  const scrollTop = scrollParent.scrollTop;
+  /* 统一坐标系：scrollTop 减去 viewport 在瀑布流中的位移 = spacer 内部偏移 */
+  const viewportTop = viewportEl.offsetTop;
+  const scrollTop = scrollParent.scrollTop - viewportTop;
   const viewH = scrollParent.clientHeight;
   const buffer = viewH * 3; /* 上下各 3 屏缓冲 — 行业推荐值 */
 
@@ -195,10 +199,15 @@ function onNodeResize(entries) {
 
 /* ===== 重建位置表（实测高度优先，估算兜底） ===== */
 function rebuildPositions() {
-  /* 锚点：记录当前视口顶部的题目，防止校准后页面跳动 */
+  if (!viewportEl || !viewportEl.parentElement || !spacerEl) return;
+
+  const scrollParent = viewportEl.parentElement;
+  const viewportTop = viewportEl.offsetTop;
+
+  /* 锚点：记录当前视口顶部的题目在 spacer 坐标系内的偏移 */
   let anchorQi = 0;
-  if (viewportEl && viewportEl.parentElement && questionPositions.length > 0) {
-    const st = viewportEl.parentElement.scrollTop;
+  if (questionPositions.length > 0) {
+    const st = scrollParent.scrollTop - viewportTop; /* 统一到 spacer 坐标系 */
     for (let i = questions.length - 1; i >= 0; i--) {
       if (questionPositions[i] <= st) { anchorQi = i; break; }
     }
@@ -219,16 +228,16 @@ function rebuildPositions() {
       offset += ESTIMATED_HEIGHTS[questions[i].type] || 140;
     }
   }
-  if (spacerEl) {
-    spacerEl.style.height = offset + 'px';
-    spacerEl.style.position = 'relative';
-  }
+  spacerEl.style.height = offset + 'px';
+  spacerEl.style.position = 'relative';
 
-  /* 恢复锚点 — 校准前后视口顶部题目不变 */
-  if (viewportEl && viewportEl.parentElement) {
-    viewportEl.parentElement.scrollTop = questionPositions[anchorQi];
+  /* 恢复锚点 — 仅当用户已在题目区域时才校准，避免初始加载时跳转 */
+  const currentScroll = scrollParent.scrollTop;
+  if (currentScroll >= viewportTop) {
+    _suppressScroll = true;
+    scrollParent.scrollTop = questionPositions[anchorQi] + viewportTop;
+    requestAnimationFrame(() => { _suppressScroll = false; });
   }
-}
 
 /* ===== 渲染领域分段标题 ===== */
 function renderDomainHeader(domain, startIndex, endIndex) {
