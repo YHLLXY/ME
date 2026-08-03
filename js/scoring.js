@@ -774,7 +774,7 @@ function calculateScores(answers) {
 
   // --- 7. 元信息 ---
   var totalQuestions = QUESTIONS.length;
-  var totalScored = Objects.keys(answers).filter(function (qid) {
+  var totalScored = Object.keys(answers).filter(function (qid) {
     var q = QUESTIONS.find(function (q) { return q.id === qid; });
     if (!q) return false;
     var val = answers[qid];
