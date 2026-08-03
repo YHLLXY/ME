@@ -158,13 +158,21 @@ async function handleCheckbox(qid, value) {
 
 async function handleSkip(qid) {
   if (currentSkipped.has(qid)) {
+    /* 取消跳过：走删除语义（undefined 哨兵），不再把 undefined 写进 IDB */
     currentSkipped.delete(qid);
     delete currentAnswers[qid];
+    scheduleSave(qid, undefined);
   } else {
     currentSkipped.add(qid);
     currentAnswers[qid] = '__SKIPPED__';
+    scheduleSave(qid, '__SKIPPED__');
   }
-  scheduleSave(qid, currentAnswers[qid]);
+  /* 跳过/取消跳过都会改变进度与报告就绪状态，必须同步刷新 */
+  updateProgress(
+    Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length,
+    QUESTIONS.length
+  );
+  checkReportReady();
   renderVisible(true);
 }
 
