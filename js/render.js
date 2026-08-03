@@ -13,7 +13,7 @@ const ESTIMATED_HEIGHTS = {
   ranking: 360, slider: 190, shorttext: 180, longtext: 260
 };
 let questionPositions = [];
-let lastRenderRange = { from: -1, to: -1 };
+let boundRange = { from: -1, to: -1 };  // 节点池实际覆盖的题目范围（≠ 窗口范围，池可能滞后）
 let viewportEl = null;
 let spacerEl = null;
 let ticking = false;
@@ -24,30 +24,6 @@ let resizeObserver = null;
 let pendingRecalc = false;
 let _suppressScroll = false;    // rebuildPositions 内部设 scrollTop 时抑制 scroll 事件
 
-/* ===== 动画 CSS 注入 ===== */
-let _animCSSInjected = false;
-function _injectAnimCSS() {
-  if (_animCSSInjected) return;
-  _animCSSInjected = true;
-  const style = document.createElement('style');
-  style.textContent = `
-    .question-slot {
-      transition: opacity 250ms ease-out, transform 200ms ease-out;
-      overflow: hidden;
-    }
-    /* 节点正在"入场"——先从透明+微下移开始，下一帧过渡到正常 */
-    .question-slot.entering {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .question-slot { transition: none; }
-      .question-slot.entering { opacity: 1; transform: none; }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
 /* ===== 初始化渲染 ===== */
 function initRender(_questions, _answers) {
   questions = _questions;
@@ -55,19 +31,17 @@ function initRender(_questions, _answers) {
   viewportEl = document.getElementById('viewport');
   spacerEl = document.getElementById('spacer');
 
-  _injectAnimCSS();
-
   /* 滚动容器启用 GPU 合成 */
   if (viewportEl.parentElement) {
     viewportEl.parentElement.style.willChange = 'scroll-position';
   }
 
-  /* 构建初始位置表（估算） */
-  rebuildPositions();
-
   /* M3: 按视口高度动态扩容节点池（7 屏缓冲 / 每题估算 180px + 10 余量；1080p ≈ 52） */
   const viewH = viewportEl.parentElement?.clientHeight || 800;
   POOL_SIZE = Math.ceil((7 * viewH) / 180) + 10;
+
+  /* 构建初始位置表（估算）— 必须在节点池创建之后，保证首个 renderVisible 全量绑定 */
+  rebuildPositions();
 
   /* 创建 ResizeObserver — 渲染后自动测量真实高度 */
   resizeObserver = new ResizeObserver(onNodeResize);
@@ -76,11 +50,11 @@ function initRender(_questions, _answers) {
   for (let i = 0; i < POOL_SIZE; i++) {
     const div = document.createElement('div');
     div.className = 'question-slot';
-    div.style.cssText = 'position:absolute;left:0;right:0;';
+    div.style.cssText = 'position:absolute;left:0;right:0;overflow:hidden;';
     div.setAttribute('aria-hidden', 'true');
     div.dataset.qi = '-1';
     spacerEl.appendChild(div);
-    nodePool.push({ el: div, qi: -1 });
+    nodePool.push({ el: div, qi: -1, transform: null });
     resizeObserver.observe(div);
   }
 
@@ -96,7 +70,9 @@ function initRender(_questions, _answers) {
   renderVisible();
 }
 
-/* ===== 虚拟滚动核心 ===== */
+/* ===== 虚拟滚动核心（滑动窗口池） =====
+   节点 ↔ 题目的绑定在滚动中保持稳定：范围移动时只有边缘节点重建，
+   其余节点仅刷 transform（值未变则零写入）→ 滚动全程无 innerHTML 重建、无动画、无过渡 */
 function renderVisible() {
   if (!viewportEl || !spacerEl) return;
 
@@ -128,56 +104,88 @@ function renderVisible() {
   }
   let to = Math.min(questions.length - 1, hi + 5);
 
-  /* 范围没变 → 跳过（除非强制刷新，如答完题需要更新选中态） */
-  if (!arguments[0] && from === lastRenderRange.from && to === lastRenderRange.to) return;
-  lastRenderRange = { from, to };
+  if (to < from) {
+    for (const slot of nodePool) if (slot.qi !== -1) hideSlot(slot);
+    boundRange = { from: -1, to: -1 };
+    return;
+  }
 
-  const count = to - from + 1;
-
-  for (let i = 0; i < POOL_SIZE; i++) {
-    const slot = nodePool[i];
-    const el = slot.el;
-
-    if (i < count) {
-      const qi = from + i;
-      const q = questions[qi];
-
-      /* GPU 合成层定位 — 避免 reflow */
-      el.style.transform = `translateY(${questionPositions[qi]}px)`;
-      el.style.display = '';
-      el.removeAttribute('aria-hidden');
-
-      /* 如果节点是复用的（换了题目）→ 入场动画 */
-      if (slot.qi !== qi) {
-        slot.qi = qi;
-        el.dataset.qi = qi;
-        el.classList.add('entering');
-        renderQuestion(el, q, qi);
-        /* 下一帧移除 entering → CSS 过渡自动执行 */
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            el.classList.remove('entering');
-          });
-        });
-      } else if (arguments[0]) {
-        /* 同题目但强制刷新（答题后更新选中态）→ 无动画直接重新渲染 */
-        /* 输入框/文本域持有焦点时跳过重建 — RO 抖动或键盘布局变化触发的强刷会销毁输入节点导致焦点丢失 */
-        const ae = document.activeElement;
-        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && el.contains(ae)) continue;
-        renderQuestion(el, q, qi);
+  /* 池覆盖 ≠ 窗口 → 先回收池中溢出窗口的节点，再补绑窗口内缺绑的题目 */
+  if (boundRange.from !== from || boundRange.to !== to) {
+    for (const slot of nodePool) {
+      /* 溢出范围的在 3 屏缓冲区外，不可见，直接回收（无动画） */
+      if (slot.qi !== -1 && (slot.qi < from || slot.qi > to)) hideSlot(slot);
+    }
+    const bind = (qi) => {
+      for (const slot of nodePool) {
+        if (slot.qi === -1) {
+          slot.qi = qi;
+          slot.el.dataset.qi = qi;
+          slot.el.style.display = '';
+          slot.el.removeAttribute('aria-hidden');
+          slot.transform = null; /* 强制写一次位置 */
+          setTransform(slot, qi);
+          renderQuestion(slot.el, questions[qi], qi);
+          return;
+        }
       }
+    };
+    if (boundRange.to < 0) {
+      /* 首次渲染（或池完全清空后）：全量绑定 */
+      for (let qi = from; qi <= to; qi++) bind(qi);
     } else {
-      /* 池中多余节点 — 静默隐藏 */
+      /* 只补绑窗口内缺绑的题目（钳制在 [from,to] 内，双向都安全） */
+      for (let qi = Math.max(boundRange.to + 1, from); qi <= to; qi++) bind(qi);
+      for (let qi = Math.min(boundRange.from - 1, to); qi >= from; qi--) bind(qi);
+    }
+    /* 按实际绑定结果回写覆盖范围 — 池耗尽时缺口会在下一 pass 自愈 */
+    let bf = -1, bt = -1;
+    for (const slot of nodePool) {
       if (slot.qi !== -1) {
-        slot.qi = -1;
-        el.dataset.qi = '-1';
-        el.classList.add('entering');
-        el.setAttribute('aria-hidden', 'true');
-        requestAnimationFrame(() => {
-          el.style.display = 'none';
-          el.classList.remove('entering');
-        });
+        if (bf < 0 || slot.qi < bf) bf = slot.qi;
+        if (slot.qi > bt) bt = slot.qi;
       }
+    }
+    boundRange = { from: bf, to: bt };
+  }
+
+  /* 全量刷位置（高度校准后坐标变化也在这里生效；值相同则零写入） */
+  for (const slot of nodePool) {
+    if (slot.qi !== -1) setTransform(slot, slot.qi);
+  }
+}
+
+/* 节点回收：立即隐藏，不参与任何动画 */
+function hideSlot(slot) {
+  slot.qi = -1;
+  slot.el.dataset.qi = '-1';
+  slot.el.setAttribute('aria-hidden', 'true');
+  slot.el.style.display = 'none';
+}
+
+/* GPU 合成层定位 — 值未变不写，避免无谓的样式重算 */
+function setTransform(slot, qi) {
+  const v = `translateY(${questionPositions[qi]}px)`;
+  if (slot.transform !== v) {
+    slot.transform = v;
+    slot.el.style.transform = v;
+  }
+}
+
+/* 答题后的定点刷新：只重建答案卡片 + 其领域标题卡片。
+   其余卡片 DOM 纹丝不动 → 不再出现整池闪动；输入框持焦点时跳过（V1 保护） */
+function rerenderCards(qid) {
+  const qi = questions.findIndex(q => q.id === qid);
+  if (qi < 0) return;
+  const domain = questions[qi].domain;
+  let headerQi = qi;
+  while (headerQi > 0 && questions[headerQi - 1].domain === domain) headerQi--;
+  const targets = qi === headerQi ? new Set([qi]) : new Set([qi, headerQi]);
+  for (const slot of nodePool) {
+    if (slot.qi !== -1 && targets.has(slot.qi)) {
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && slot.el.contains(ae)) continue;
+      renderQuestion(slot.el, questions[slot.qi], slot.qi);
     }
   }
 }
@@ -199,7 +207,7 @@ function onNodeResize(entries) {
     pendingRecalc = true;
     requestAnimationFrame(() => {
       rebuildPositions();
-      renderVisible(true);
+      renderVisible(); /* 位置表已变 → 全量刷 transform；窗口移动则补绑边缘节点 */
       pendingRecalc = false;
     });
   }

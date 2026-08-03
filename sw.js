@@ -1,5 +1,5 @@
-/* v3：旧缓存含损坏的 render.js（S1 未闭合），必须换新缓存桶 + 同步移除已删除的 anime */
-const CACHE = 'self-portrait-v3';
+/* v4：滑动窗口池重构 render.js（滚动零重建零动画）— 已安装 PWA 必须换桶才能拿到新代码 */
+const CACHE = 'self-portrait-v4';
 const SCOPE = self.location.pathname.replace(/\/[^/]*$/, '');
 const ASSETS = [
   SCOPE + '/',

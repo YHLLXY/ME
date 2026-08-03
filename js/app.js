@@ -151,8 +151,8 @@ async function handleAnswer(qid, value, opts = {}) {
     Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length,
     QUESTIONS.length
   );
-  /* 输入类题型（shorttext/longtext/slider）原地更新，跳过全池重建 — 防止手机键盘收起、焦点丢失 */
-  if (!opts.skipRerender) renderVisible(true); // 强制刷新 — 答题后需要更新选中态
+  /* 输入类题型（shorttext/longtext/slider）原地更新，跳过重建 — 防止手机键盘收起、焦点丢失 */
+  if (!opts.skipRerender) rerenderCards(qid); // 定点刷新 — 只重建答案卡 + 领域标题卡，不再整池重建
   checkReportReady();
 
   // 检查是否全部完成
@@ -199,7 +199,7 @@ async function handleSkip(qid) {
     QUESTIONS.length
   );
   checkReportReady();
-  renderVisible(true);
+  rerenderCards(qid);
 }
 
 /* ===== 工具 ===== */
