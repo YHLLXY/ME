@@ -37,6 +37,15 @@ function saveAnswer(questionId, value) {
   });
 }
 
+function deleteAnswer(questionId) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('answers', 'readwrite');
+    tx.objectStore('answers').delete(questionId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 function getAnswer(questionId) {
   return new Promise((resolve) => {
     const tx = db.transaction('answers', 'readonly');
@@ -83,29 +92,60 @@ function publish(event, payload) {
   });
 }
 
-/* ===== 自动保存（防抖） ===== */
+/* ===== 自动保存（防抖 + 批量落库） ===== */
 let saveTimer = null;
-let pendingSaves = 0;
+let retryTimer = null;
+const pendingQueue = new Map();   /* questionId → value；value === undefined 表示删除该题 */
 
 function scheduleSave(questionId, value) {
-  pendingSaves++;
+  /* 同题去重：后写覆盖先写；undefined 为删除哨兵（取消跳过） */
+  pendingQueue.set(questionId, value);
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    try {
-      await saveAnswer(questionId, value);
-      pendingSaves--;
-      publish('saved', { count: pendingSaves });
-    } catch (e) {
-      console.error('Auto-save failed:', e);
-      publish('save-error', { error: e });
-    }
-  }, 800);
+  saveTimer = setTimeout(() => { saveTimer = null; doFlush(); }, 800);
 }
 
-/* ===== 立即保存（页面隐藏时） ===== */
+/* 批量落库：队列快照 → 单事务写入（answers + lastSavedAt）→ 失败重排重试 */
+function doFlush() {
+  if (pendingQueue.size === 0) return Promise.resolve();
+  const entries = [...pendingQueue.entries()];
+  pendingQueue.clear();
+  return new Promise((resolve) => {
+    let tx;
+    try {
+      tx = db.transaction(['answers', 'meta'], 'readwrite');
+    } catch (e) {
+      /* DB 不可用（M8 内存降级模式）：静默丢弃队列，不阻塞流程 */
+      console.error('IndexedDB unavailable, discarding pending saves:', e);
+      pendingQueue.clear();
+      resolve();
+      return;
+    }
+    const answersStore = tx.objectStore('answers');
+    const metaStore = tx.objectStore('meta');
+    for (const [qid, value] of entries) {
+      if (value === undefined) answersStore.delete(qid);
+      else answersStore.put({ questionId: qid, value, savedAt: Date.now() });
+    }
+    metaStore.put({ key: 'lastSavedAt', value: Date.now() });
+    tx.oncomplete = () => {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      publish('saved', { queued: pendingQueue.size });
+      resolve();
+    };
+    tx.onerror = () => {
+      /* 失败：重排待存条目（去重），稍后自动重试 */
+      for (const [qid, value] of entries) pendingQueue.set(qid, value);
+      publish('save-error', { error: tx.error });
+      if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = null; doFlush(); }, 1500);
+      resolve();
+    };
+  });
+}
+
+/* ===== 立即保存（页面隐藏 / 报告生成前） ===== */
 function flushPendingSaves() {
   clearTimeout(saveTimer);
-  return Promise.resolve();
+  return doFlush();
 }
 
 /* ===== 草稿恢复 ===== */
