@@ -238,6 +238,7 @@ function rebuildPositions() {
     scrollParent.scrollTop = questionPositions[anchorQi] + viewportTop;
     requestAnimationFrame(() => { _suppressScroll = false; });
   }
+}
 
 /* ===== 渲染领域分段标题 ===== */
 function renderDomainHeader(domain, startIndex, endIndex) {
