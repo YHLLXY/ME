@@ -118,15 +118,27 @@ function setupEventDelegation() {
     const qid = e.target.dataset.qid;
 
     switch (action) {
-      case 'shorttext': await handleAnswer(qid, e.target.value); break;
-      case 'longtext': await handleAnswer(qid, e.target.value); break;
-      case 'slider': await handleAnswer(qid, parseInt(e.target.value)); break;
+      case 'shorttext':
+        /* 原位更新字数统计（不重建节点池，避免键盘收起/焦点丢失） */
+        const cardShort = e.target.closest('.q-card');
+        const counterShort = cardShort && cardShort.querySelector('.char-count');
+        if (counterShort) {
+          counterShort.textContent = `${e.target.value.length}/${e.target.maxLength || 300}`;
+        }
+        await handleAnswer(qid, e.target.value, { skipRerender: true });
+        break;
+      case 'longtext':
+        await handleAnswer(qid, e.target.value, { skipRerender: true });
+        break;
+      case 'slider':
+        await handleAnswer(qid, parseInt(e.target.value), { skipRerender: true });
+        break;
     }
   }, 500));
 }
 
 /* ===== 答案处理 ===== */
-async function handleAnswer(qid, value) {
+async function handleAnswer(qid, value, opts = {}) {
   currentAnswers[qid] = value;
   currentSkipped.delete(qid);
   scheduleSave(qid, value);
@@ -134,7 +146,8 @@ async function handleAnswer(qid, value) {
     Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length,
     QUESTIONS.length
   );
-  renderVisible(true); // 强制刷新 — 答题后需要更新选中态
+  /* 输入类题型（shorttext/longtext/slider）原地更新，跳过全池重建 — 防止手机键盘收起、焦点丢失 */
+  if (!opts.skipRerender) renderVisible(true); // 强制刷新 — 答题后需要更新选中态
   checkReportReady();
 
   // 检查是否全部完成
