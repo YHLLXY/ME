@@ -21,6 +21,24 @@ function showSaved() {
   }, 2000);
 }
 
+/* ===== Toast 轻提示 ===== */
+let toastTimer = null;
+function showToast(msg, ms = 3000) {
+  let toast = document.querySelector('.app-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'app-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 300);
+  }, ms);
+}
+
 /* ===== 回到顶部按钮 ===== */
 const btnBackTop = document.getElementById('btnBackTop');
 const mainEl = document.querySelector('.waterfall');
@@ -86,6 +104,17 @@ modalCSS.textContent = `
 .modal-btns .btn-cancel:hover { background:var(--bg-hover); color:var(--text-primary); }
 `;
 document.head.appendChild(modalCSS);
+
+// Toast CSS 注入
+const toastCSS = document.createElement('style');
+toastCSS.textContent = `
+.app-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(8px);
+  background:var(--accent); color:var(--bg-base); padding:12px 24px; border-radius:24px;
+  font-size:14px; font-weight:600; z-index:500; max-width:90vw; text-align:center;
+  opacity:0; pointer-events:none; transition:opacity 300ms, transform 300ms; }
+.app-toast.visible { opacity:1; transform:translateX(-50%) translateY(0); }
+`;
+document.head.appendChild(toastCSS);
 
 /* ===== 主题切换 ===== */
 const themeToggle = document.getElementById('themeToggle');

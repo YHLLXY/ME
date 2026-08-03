@@ -5,8 +5,13 @@ let currentSkipped = new Set();
 
 /* ===== 初始化 ===== */
 async function init() {
-  // 初始化 IndexedDB
-  await openDB();
+  // 初始化 IndexedDB（M8：失败降级内存模式，继续渲染答题）
+  try {
+    await openDB();
+  } catch (e) {
+    console.error('IndexedDB 初始化失败，降级为内存模式：', e);
+    showToast('⚠️ 本地存储不可用，本次数据不会保存');
+  }
 
   // 恢复草稿
   const draft = await restoreDraft();
@@ -34,6 +39,7 @@ async function init() {
 
   // 保存监听
   subscribe('saved', () => showSaved());
+  subscribe('save-error', () => showToast('⚠️ 保存失败，将自动重试'));
 
   // UI 组件
   setupBackTop();
@@ -153,13 +159,7 @@ async function handleAnswer(qid, value, opts = {}) {
   // 检查是否全部完成
   const totalAnswered = Object.keys(currentAnswers).filter(k => currentAnswers[k] !== '__SKIPPED__').length;
   if (totalAnswered >= QUESTIONS.length) {
-    setTimeout(() => {
-      const toast = document.createElement('div');
-      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--accent);color:var(--bg-base);padding:12px 24px;border-radius:24px;font-size:14px;font-weight:600;z-index:500;animation:fadeInUp 300ms ease-out;';
-      toast.textContent = '🎉 全部完成！点击右上角查看报告';
-      document.body.appendChild(toast);
-      setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 300ms'; setTimeout(() => toast.remove(), 300); }, 4000);
-    }, 500);
+    setTimeout(() => showToast('🎉 全部完成！点击右上角查看报告', 4000), 500);
   }
 }
 

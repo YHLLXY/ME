@@ -26,6 +26,7 @@ function openDB() {
 /* ===== 答案读写 ===== */
 function saveAnswer(questionId, value) {
   return new Promise((resolve, reject) => {
+    if (!db) { resolve(); return; } /* 内存降级模式：静默跳过 */
     const tx = db.transaction('answers', 'readwrite');
     tx.objectStore('answers').put({
       questionId,
@@ -39,6 +40,7 @@ function saveAnswer(questionId, value) {
 
 function deleteAnswer(questionId) {
   return new Promise((resolve, reject) => {
+    if (!db) { resolve(); return; } /* 内存降级模式：静默跳过 */
     const tx = db.transaction('answers', 'readwrite');
     tx.objectStore('answers').delete(questionId);
     tx.oncomplete = () => resolve();
@@ -48,6 +50,7 @@ function deleteAnswer(questionId) {
 
 function getAnswer(questionId) {
   return new Promise((resolve) => {
+    if (!db) { resolve(null); return; } /* 内存降级模式 */
     const tx = db.transaction('answers', 'readonly');
     const req = tx.objectStore('answers').get(questionId);
     req.onsuccess = () => resolve(req.result || null);
@@ -56,6 +59,7 @@ function getAnswer(questionId) {
 
 function getAllAnswers() {
   return new Promise((resolve) => {
+    if (!db) { resolve({}); return; } /* 内存降级模式 */
     const tx = db.transaction('answers', 'readonly');
     const req = tx.objectStore('answers').getAll();
     req.onsuccess = () => {
@@ -69,6 +73,7 @@ function getAllAnswers() {
 /* ===== 元数据读写 ===== */
 function getMeta(key) {
   return new Promise((resolve) => {
+    if (!db) { resolve(null); return; } /* 内存降级模式 */
     const tx = db.transaction('meta', 'readonly');
     const req = tx.objectStore('meta').get(key);
     req.onsuccess = () => resolve(req.result ? req.result.value : null);
@@ -77,6 +82,7 @@ function getMeta(key) {
 
 function setMeta(key, value) {
   return new Promise((resolve, reject) => {
+    if (!db) { resolve(); return; } /* 内存降级模式：静默跳过 */
     const tx = db.transaction('meta', 'readwrite');
     tx.objectStore('meta').put({ key, value });
     tx.oncomplete = () => resolve();
@@ -164,6 +170,7 @@ async function restoreDraft() {
 /* ===== 清除所有数据 ===== */
 function clearAllData() {
   return new Promise((resolve, reject) => {
+    if (!db) { resolve(); return; } /* 内存降级模式：静默跳过 */
     const tx = db.transaction(['answers', 'meta'], 'readwrite');
     tx.objectStore('answers').clear();
     tx.objectStore('meta').clear();
