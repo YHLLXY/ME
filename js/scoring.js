@@ -337,7 +337,8 @@ function _processBigFive(frameworkDimScores) {
  * MBTI: 四轴得分 + 四字母类型
  *
  * 每轴同时考虑:
- *   1. likert5/likert7/slider 量表题 → 归一化为 0-100
+ *   1. likert5/likert7/slider 量表题 → 归一化为 0-100，按题极性翻转
+ *      （q.polarity === 'first' → 高分=第一字母，不翻转；默认高分=第二字母，翻转）
  *   2. 直接选择题 (radio with string values) → 记票
  * 混合计算: 量表分(50%) + 选择题票数(50%)
  */
@@ -354,13 +355,32 @@ function _processMBTI(answers, frameworkDimScores, dimMap) {
   var mbType = '';
 
   FRAMEWORKS.mbti.dimensions.forEach(function (axis) {
-    // 1. 量表题得分（高分为 second letter 方向，需翻转）
-    var rawScore = frameworkDimScores[axis];
+    var mapKey = 'mbti:' + axis;
+    var questions = (dimMap && dimMap[mapKey]) ? dimMap[mapKey] : [];
+
+    // 1. 量表题逐题归一化求和（不再整轴全局翻转 — 题目方向各异，须按题 polarity 处理）
+    var scaleSum = 0;
+    var scaleCount = 0;
+
+    questions.forEach(function (q) {
+      var val = answers[q.id];
+      if (val == null) return;
+
+      // radio 非数字题由下方投票逻辑处理，不进数值评分（与投票条件严格一致，避免重复计分）
+      if (q.type === 'radio' && !_optionsAreNumeric(q)) return;
+
+      var score = normalizeAnswer(q, val);
+      if (score == null) return;
+
+      var flip = !(q.polarity === 'first'); /* 默认 second：高分→第二字母，需翻转 */
+      scaleSum += flip ? (100 - score) : score;
+      scaleCount++;
+    });
+
+    var scaleScore = scaleCount > 0 ? scaleSum / scaleCount : null;
 
     // 2. 收集直接选择题的投票
     var choiceVotes = { first: 0, second: 0 };
-    var mapKey = 'mbti:' + axis;
-    var questions = (dimMap && dimMap[mapKey]) ? dimMap[mapKey] : [];
 
     questions.forEach(function (q) {
       var val = answers[q.id];
@@ -385,18 +405,12 @@ function _processMBTI(answers, frameworkDimScores, dimMap) {
       choiceScore = Math.round((choiceVotes.first / totalChoices) * 100);
     }
 
-    // 4. 翻转量表分 (量表题高分→second letter, 转为高分→first letter)
-    var flippedScaleScore = null;
-    if (rawScore != null) {
-      flippedScaleScore = 100 - rawScore;
-    }
-
-    // 5. 混合得分
+    // 4. 混合得分
     var combinedScore;
-    if (flippedScaleScore != null && choiceScore != null) {
-      combinedScore = Math.round((flippedScaleScore + choiceScore) / 2);
-    } else if (flippedScaleScore != null) {
-      combinedScore = flippedScaleScore;
+    if (scaleScore != null && choiceScore != null) {
+      combinedScore = Math.round((scaleScore + choiceScore) / 2);
+    } else if (scaleScore != null) {
+      combinedScore = Math.round(scaleScore);
     } else if (choiceScore != null) {
       combinedScore = choiceScore;
     } else {
@@ -405,7 +419,7 @@ function _processMBTI(answers, frameworkDimScores, dimMap) {
 
     dimScores[axis] = combinedScore;
 
-    // 6. 判定类型字母 (>50 = first letter, <=50 = second letter)
+    // 5. 判定类型字母 (>50 = first letter, <=50 = second letter)
     if (combinedScore != null) {
       mbType += (combinedScore > 50) ? axes[axis].firstLetter : axes[axis].secondLetter;
     } else {

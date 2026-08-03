@@ -285,13 +285,13 @@ const QUESTIONS = [
     text:'朋友向你倾诉烦恼时，你的第一反应是？', options:[
       {value:'t',label:'帮 ta 分析问题、找解决方案'},{value:'f',label:'先共情、安抚情绪'}], required:false, framework:'mbti', dimension:'tf' },
   { id:'mind-039', domain:'mind', layer:'perceptual', type:'likert5',
-    text:'做决定时，逻辑一致性通常比人情因素更重要', options:[{value:1,label:'完全不同意'},{value:5,label:'完全同意'}], required:false, framework:'mbti', dimension:'tf' },
+    text:'做决定时，逻辑一致性通常比人情因素更重要', options:[{value:1,label:'完全不同意'},{value:5,label:'完全同意'}], required:false, framework:'mbti', dimension:'tf', polarity:'first' },
   // MBTI: J/P 轴 (2题)
   { id:'mind-040', domain:'mind', layer:'perceptual', type:'radio',
     text:'面对一个截止日期，你通常？', options:[
       {value:'j',label:'提前规划、分步执行、尽量提早完成'},{value:'p',label:'截止日期前爆发冲刺，享受压力下的效率'}], required:false, framework:'mbti', dimension:'jp' },
   { id:'mind-041', domain:'mind', layer:'perceptual', type:'likert5',
-    text:'计划被打乱会让我感到焦虑', options:[{value:1,label:'完全不符合（我很灵活）'},{value:5,label:'完全符合（我很在意计划）'}], required:false, framework:'mbti', dimension:'jp' },
+    text:'计划被打乱会让我感到焦虑', options:[{value:1,label:'完全不符合（我很灵活）'},{value:5,label:'完全符合（我很在意计划）'}], required:false, framework:'mbti', dimension:'jp', polarity:'first' },
   // Enneagram 9 型自评 (9题)
   { id:'mind-042', domain:'mind', layer:'perceptual', type:'likert5',
     text:'我内心有一个严厉的"内在批评家"，驱使我不断追求更好', options:[{value:1,label:'完全不符合'},{value:5,label:'完全符合'}], required:false, framework:'enneagram', dimension:'type1' },
