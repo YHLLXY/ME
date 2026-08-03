@@ -43,7 +43,6 @@ async function init() {
 
   // UI 组件
   setupBackTop();
-  setupTheme();
 
   // 报告按钮
   const btnReport = document.getElementById('btnReport');

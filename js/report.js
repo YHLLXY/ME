@@ -229,7 +229,7 @@ function renderCover(report) {
     + '<h1 class="r-cover-title">自我画像</h1>'
     + (dateStr ? '<p class="r-cover-date">生成日期：' + dateStr + '</p>' : '')
     + '<div class="r-cover-tags">' + tagsHTML + '</div>'
-    + '<p class="r-cover-meta">基于 400 题 · 11 个心理学框架 · 6 大领域</p>'
+    + '<p class="r-cover-meta">基于 ' + QUESTIONS.length + ' 题 · 11 个心理学框架 · 6 大领域</p>'
     + '</div>';
 }
 

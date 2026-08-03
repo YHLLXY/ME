@@ -116,13 +116,3 @@ toastCSS.textContent = `
 `;
 document.head.appendChild(toastCSS);
 
-/* ===== 主题切换 ===== */
-const themeToggle = document.getElementById('themeToggle');
-function setupTheme() {
-  const saved = localStorage.getItem('sp-theme') || 'dark';
-  themeToggle.addEventListener('click', () => {
-    const next = saved === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('sp-theme', next);
-    location.reload();
-  });
-}
