@@ -161,6 +161,9 @@ function renderVisible() {
         });
       } else if (arguments[0]) {
         /* 同题目但强制刷新（答题后更新选中态）→ 无动画直接重新渲染 */
+        /* 输入框/文本域持有焦点时跳过重建 — RO 抖动或键盘布局变化触发的强刷会销毁输入节点导致焦点丢失 */
+        const ae = document.activeElement;
+        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && el.contains(ae)) continue;
         renderQuestion(el, q, qi);
       }
     } else {
@@ -186,7 +189,8 @@ function onNodeResize(entries) {
     const qi = parseInt(entry.target.dataset.qi);
     if (isNaN(qi) || qi < 0) continue;
     const newH = entry.target.offsetHeight; /* 使用 offsetHeight 获取完整盒模型高度 */
-    if (newH > 0 && measuredHeights[qi] !== newH) {
+    /* ≤1px 抖动（字体子像素取整导致 189↔190 振荡）忽略，否则会无限触发重排循环 */
+    if (newH > 0 && Math.abs((measuredHeights[qi] || 0) - newH) > 1) {
       measuredHeights[qi] = newH;
       needsRecalc = true;
     }
