@@ -808,6 +808,9 @@ function buildTextSummary(report) {
  */
 async function generateReport() {
   try {
+    // 0. 先把防抖窗口内的待存答案落库，避免报告缺失最近答案
+    await flushPendingSaves();
+
     // 1. 获取所有答案
     var answers = await getAllAnswers();
 
