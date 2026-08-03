@@ -346,12 +346,18 @@ function renderCheckbox(q, val) {
 }
 
 function renderRanking(q, val) {
+  /* 答案 = 有序 option value 数组；默认按原始选项顺序 */
   const ordered = Array.isArray(val) ? val : (q.options || []).map(o => o.value);
   const items = ordered.map((v, i) => {
     const label = (q.options || []).find(o => o.value === v)?.label || v;
-    return `<div class="ranking-item" draggable="true" data-action="ranking" data-qid="${q.id}" data-value="${v}">
-      <span class="ranking-handle">≡</span>
+    const first = i === 0;
+    const last = i === ordered.length - 1;
+    return `<div class="ranking-item" data-qid="${q.id}">
       <span class="ranking-num">${i + 1}.</span> ${label}
+      <span class="ranking-moves">
+        <button type="button" class="ranking-move" data-action="ranking" data-qid="${q.id}" data-index="${i}" data-dir="up" aria-label="上移"${first ? ' disabled' : ''}>↑</button>
+        <button type="button" class="ranking-move" data-action="ranking" data-qid="${q.id}" data-index="${i}" data-dir="down" aria-label="下移"${last ? ' disabled' : ''}>↓</button>
+      </span>
     </div>`;
   }).join('');
   return `<div class="ranking-list">${items}</div>`;

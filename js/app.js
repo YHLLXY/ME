@@ -94,6 +94,18 @@ function setupEventDelegation() {
       case 'checkbox':
         await handleCheckbox(qid, value);
         break;
+      case 'ranking': {
+        /* 上下移：交换相邻两项，答案保持有序数组 */
+        const dir = el.dataset.dir;
+        const idx = parseInt(el.dataset.index, 10);
+        const base = (QUESTIONS.find(q => q.id === qid)?.options || []).map(o => o.value);
+        const arr = Array.isArray(currentAnswers[qid]) ? [...currentAnswers[qid]] : base;
+        const swap = dir === 'up' ? idx - 1 : idx + 1;
+        if (swap < 0 || swap >= arr.length) break; /* disabled 按钮兜底 */
+        [arr[swap], arr[idx]] = [arr[idx], arr[swap]];
+        await handleAnswer(qid, arr);
+        break;
+      }
       case 'skip':
         await handleSkip(qid);
         break;
