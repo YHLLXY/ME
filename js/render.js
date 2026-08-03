@@ -4,7 +4,7 @@
 let questions = [];
 let answers = {};
 let nodePool = [];
-const POOL_SIZE = 35;
+let POOL_SIZE = 35; /* 默认值；initRender 按视口高度动态扩容 */
 const DOMAIN_HEADER_HEIGHT = 100;
 
 /* 估算高度 — 基于实际 UI 测量（卡片头 ~55px + 输入区 + 跳过按钮 ~30px + padding ~32px） */
@@ -64,6 +64,10 @@ function initRender(_questions, _answers) {
 
   /* 构建初始位置表（估算） */
   rebuildPositions();
+
+  /* M3: 按视口高度动态扩容节点池（7 屏缓冲 / 每题估算 180px + 10 余量；1080p ≈ 52） */
+  const viewH = viewportEl.parentElement?.clientHeight || 800;
+  POOL_SIZE = Math.ceil((7 * viewH) / 180) + 10;
 
   /* 创建 ResizeObserver — 渲染后自动测量真实高度 */
   resizeObserver = new ResizeObserver(onNodeResize);
