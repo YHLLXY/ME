@@ -137,3 +137,70 @@ if (slot.qi !== qi) {   // 换了题目 → 重新渲染
 ### 如何避免
 
 **节点池的"复用判定"和"内容更新判定"是两个独立维度。** 复用判定是"这个 slot 该显示哪个题"，内容更新判定是"这个题的内容有没有变化（选中态、输入值等）"。前者通过 `qi` 判断，后者需要额外的脏标记或强制刷新参数。
+
+---
+
+## 2026-08-01：ResizeObserver 校准导致页面上下闪动
+
+### 问题
+
+ResizeObserver 测量高度后回写位置表，导致页面不受控制地上下闪动。
+
+### 根因：三个子问题叠加
+
+#### 子问题 1：坐标系不统一
+
+`scrollParent.scrollTop` 是 waterfall 容器内的值（含 intro 区域高度），`questionPositions` 是 spacer 内部的值（从 0 开始）。两个坐标系差了一个 `viewportEl.offsetTop`。
+
+```javascript
+// ❌ 错误：在 spacer 坐标系找锚点，却在 waterfall 坐标系设 scrollTop
+const st = scrollParent.scrollTop;             // waterfall 坐标系
+anchorQi = find(q => questionPositions[q] <= st); // spacer 坐标系 — 比较无意义
+scrollParent.scrollTop = questionPositions[anchorQi]; // spacer 值写入 waterfall → 跳飞
+```
+
+每次校准都跳到错误位置 → 滚动事件 → 再次渲染 → ResizeObserver → 再次校准 → 反复闪动。
+
+#### 子问题 2：程序设 scrollTop 触发 scroll 事件循环
+
+`element.scrollTop = X` 会同步触发 `scroll` 事件。`rebuildPositions` 设 `scrollTop` → scroll 监听器调度 `renderVisible()` → 同时 `onNodeResize` 的 RAF 也调用 `renderVisible(true)` → 两个 render 互相干扰。
+
+#### 子问题 3：初始加载误跳转
+
+用户还在看 intro 页面时 ResizeObserver 已触发，`rebuildPositions` 把 scrollTop 设成 viewport 区域，页面从 intro 跳走。
+
+### 解决方案
+
+```javascript
+function rebuildPositions() {
+  const viewportTop = viewportEl.offsetTop;  // 坐标系差值
+
+  // 1. 锚点查找：统一到 spacer 坐标系
+  const st = scrollParent.scrollTop - viewportTop;
+  for (let i = questions.length - 1; i >= 0; i--) {
+    if (questionPositions[i] <= st) { anchorQi = i; break; }
+  }
+
+  // ...重建位置表...
+
+  // 2. 恢复锚点：spacer 值 + viewport 位移 = waterfall 坐标
+  // 3. 抑制标志位防止 scroll 事件循环
+  // 4. 只在用户已进入题目区域时校准
+  if (scrollParent.scrollTop >= viewportTop) {
+    _suppressScroll = true;
+    scrollParent.scrollTop = questionPositions[anchorQi] + viewportTop;
+    requestAnimationFrame(() => { _suppressScroll = false; });
+  }
+}
+```
+
+### 如何避免
+
+**在一个组件里混用多个坐标系是 bug 的温床。** 做法：
+
+1. **选一个"标准坐标系"**（如 spacer 内部偏移），所有内部计算用这个系
+2. **只在两个边界做转换**：
+   - 读：`scrollTop = scrollParent.scrollTop - viewportTop`（外部 → 内部）
+   - 写：`scrollParent.scrollTop = innerOffset + viewportTop`（内部 → 外部）
+3. **程序修改 DOM 驱动的滚动时，抑制事件回调**，防止意外循环
+4. **ResizeObserver 回写遵循"读同步/写异步"原则**：在回调里读尺寸，在 RAF 里改 DOM
