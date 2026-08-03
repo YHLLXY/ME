@@ -37,9 +37,9 @@ async function init() {
   // 事件代理
   setupEventDelegation();
 
-  // 保存监听
-  subscribe('saved', () => showSaved());
-  subscribe('save-error', () => showToast('⚠️ 保存失败，将自动重试'));
+  // 保存监听（subscribe(fn) 单参；事件名在 fn(event, payload) 里）
+  subscribe(() => showSaved());
+  subscribe(() => showToast('⚠️ 保存失败，将自动重试'));
 
   // UI 组件
   setupBackTop();
