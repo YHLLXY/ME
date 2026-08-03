@@ -11,6 +11,8 @@ async function init() {
   // 恢复草稿
   const draft = await restoreDraft();
   currentAnswers = draft.answers || {};
+  /* 从持久化的 '__SKIPPED__' 重建跳过集合 — 刷新后"取消跳过"仍可用 */
+  currentSkipped = new Set(Object.keys(currentAnswers).filter(k => currentAnswers[k] === '__SKIPPED__'));
   if (draft.startedAt) {
     document.getElementById('introSection').style.display = 'none';
   }
